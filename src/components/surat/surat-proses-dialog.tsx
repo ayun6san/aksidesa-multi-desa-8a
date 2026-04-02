@@ -93,11 +93,16 @@ export function SuratProsesDialog({ suratId, open, onClose }: SuratProsesDialogP
     }
   }, [suratId]);
 
+  // Fetch nomor preview - depends on surat state (reads jenisSuratId from surat, not re-fetching)
   const fetchNomorPreview = useCallback(async () => {
-    if (!suratId) return;
+    if (!surat) return;
+    // Skip preview if surat already has a nomor (re-processing rejected surat)
+    if (surat.nomorSurat) return;
     try {
+      const jenisSuratId = surat.jenisSurat.id;
+
       const [suratRes, regRes] = await Promise.all([
-        fetch(`/api/surat/nomor/generate?jenisSuratId=${suratId}`),
+        fetch(`/api/surat/nomor/generate?jenisSuratId=${jenisSuratId}`),
         fetch(`/api/surat/nomor/register/generate`),
       ]);
       if (suratRes.ok) {
@@ -111,12 +116,12 @@ export function SuratProsesDialog({ suratId, open, onClose }: SuratProsesDialogP
     } catch {
       // Ignore preview errors
     }
-  }, [suratId]);
+  }, [surat]);
 
+  // Fetch surat data when dialog opens
   useEffect(() => {
     if (open && suratId) {
       fetchSurat();
-      fetchNomorPreview();
     }
     if (!open) {
       setSurat(null);
@@ -124,7 +129,14 @@ export function SuratProsesDialog({ suratId, open, onClose }: SuratProsesDialogP
       setCatatan('');
       setDynamicFields({});
     }
-  }, [open, suratId, fetchSurat, fetchNomorPreview]);
+  }, [open, suratId, fetchSurat]);
+
+  // Fetch nomor preview ONLY after surat data is available (avoids redundant fetch)
+  useEffect(() => {
+    if (open && surat) {
+      fetchNomorPreview();
+    }
+  }, [open, surat, fetchNomorPreview]);
 
   // Parse isi surat for dynamic fields
   let isiSuratParsed: Record<string, string> | null = null;
@@ -317,8 +329,8 @@ export function SuratProsesDialog({ suratId, open, onClose }: SuratProsesDialogP
                 <p className="text-xs text-blue-700">
                   Setelah diproses, surat akan mendapat nomor dan status akan berubah menjadi
                   {surat.jenisSurat.tingkatApproval === 'PERLU_APPROVAL'
-                    ? ' Diverifikasi (menunggu approval Kepala Desa).'
-                    : ' Diproses.'}
+                    ? ' Menunggu Approval (menunggu persetujuan Kepala Desa).'
+                    : ' Dalam Proses.'}
                 </p>
               </div>
             </div>

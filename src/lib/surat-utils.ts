@@ -236,7 +236,6 @@ export function getLogAksiLabel(aksi: string): string {
     CETAK: 'Surat Dicetak',
     BATAL: 'Surat Dibatalkan',
     ARSIP: 'Surat Diarsipkan',
-    UPDATE: 'Surat Diperbarui',
   };
   return labels[aksi] || aksi;
 }
@@ -273,7 +272,7 @@ export function isValidStatusTransition(
 export function getNextValidStatuses(currentStatus: string): string[] {
   const transitions: Record<string, string[]> = {
     DRAFT: ['MENUNGGU_PROSES', 'DIBATALKAN'],
-    MENUNGGU_PROSES: ['DALAM_PROSES', 'MENUNGGU_APPROVAL', 'DIBATALKAN'],
+    MENUNGGU_PROSES: ['DALAM_PROSES', 'MENUNGGU_APPROVAL', 'DIBATALKAN', 'DITOLAK_OPERATOR'],
     DALAM_PROSES: ['DICETAK', 'DIBATALKAN'],
     MENUNGGU_APPROVAL: ['DISETUJUI', 'DITOLAK_KADES', 'DIBATALKAN'],
     DITOLAK_OPERATOR: ['MENUNGGU_PROSES', 'DALAM_PROSES', 'DIBATALKAN'],

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, FileText, User, MapPin, Phone, Clock,
   CheckCircle2, XCircle, Loader2, Printer, Ban,
-  PenTool, Eye, ChevronDown, ChevronUp,
+  Eye, ChevronDown, ChevronUp,
   AlertTriangle, Hash, Calendar, Shield,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -81,7 +81,7 @@ interface SuratLogItem {
 interface SuratDetailProps {
   suratId: string;
   onProses?: (id: string) => void;
-  onApprove?: (id: string) => void;
+  onApprove?: (id: string, mode?: 'approve' | 'reject') => void;
   onRefresh?: () => void;
   onClose?: () => void;
 }
@@ -116,17 +116,14 @@ function formatDateShort(dateStr: string) {
 
 function getLogIcon(aksi: string) {
   switch (aksi) {
-    case 'DIBUAT': return <FileText className="w-3.5 h-3.5 text-gray-400" />;
-    case 'DIAJUKAN': return <Clock className="w-3.5 h-3.5 text-blue-500" />;
-    case 'DIVERIFIKASI_LULUS': return <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500" />;
-    case 'DIVERIFIKASI_DITOLAK': return <XCircle className="w-3.5 h-3.5 text-red-500" />;
-    case 'DIPROSES': return <Loader2 className="w-3.5 h-3.5 text-amber-500" />;
-    case 'DICETAK': return <Printer className="w-3.5 h-3.5 text-purple-500" />;
-    case 'DITANDATANGANI': return <PenTool className="w-3.5 h-3.5 text-teal-500" />;
-    case 'DITOLAK_KADES': return <XCircle className="w-3.5 h-3.5 text-red-500" />;
-    case 'DIBATALKAN': return <Ban className="w-3.5 h-3.5 text-slate-500" />;
-    case 'DIARSIPKAN': return <Shield className="w-3.5 h-3.5 text-emerald-500" />;
-    default: return <Clock className="w-3.5 h-3.5 text-gray-400" />;
+    case 'AJUKAN': return <Clock className="w-3.5 h-3.5 text-blue-500" />;
+    case 'PROSES': return <Loader2 className="w-3.5 h-3.5 text-amber-500" />;
+    case 'APPROVE': return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />;
+    case 'REJECT': return <XCircle className="w-3.5 h-3.5 text-red-500" />;
+    case 'CETAK': return <Printer className="w-3.5 h-3.5 text-purple-500" />;
+    case 'BATAL': return <Ban className="w-3.5 h-3.5 text-slate-500" />;
+    case 'ARSIP': return <Shield className="w-3.5 h-3.5 text-teal-500" />;
+    default: return <FileText className="w-3.5 h-3.5 text-gray-400" />;
   }
 }
 
@@ -137,6 +134,7 @@ export function SuratDetail({ suratId, onProses, onApprove, onRefresh, onClose }
   const [loading, setLoading] = useState(true);
   const [showFullLog, setShowFullLog] = useState(false);
   const [showIsiSurat, setShowIsiSurat] = useState(false);
+  const [approveInitialMode, setApproveInitialMode] = useState<'approve' | 'reject' | undefined>(undefined);
 
   const fetchSurat = useCallback(async () => {
     try {
@@ -178,8 +176,7 @@ export function SuratDetail({ suratId, onProses, onApprove, onRefresh, onClose }
     const buttons: { label: string; icon: React.ReactNode; onClick: () => void; variant: 'default' | 'outline' | 'destructive'; className?: string }[] = [];
 
     switch (surat.status) {
-      case 'DIAJUKAN':
-      case 'DIVERIFIKASI':
+      case 'MENUNGGU_PROSES':
         buttons.push({
           label: 'Proses Surat',
           icon: <Loader2 className="w-4 h-4" />,
@@ -187,22 +184,40 @@ export function SuratDetail({ suratId, onProses, onApprove, onRefresh, onClose }
           variant: 'default',
           className: 'bg-emerald-600 hover:bg-emerald-700',
         });
+        buttons.push({
+          label: 'Tolak',
+          icon: <XCircle className="w-4 h-4" />,
+          onClick: () => {
+            setApproveInitialMode('reject');
+            onApprove?.(surat.id, 'reject');
+          },
+          variant: 'destructive',
+        });
         break;
-      case 'DIPROSES':
-      case 'DICETAK':
+      case 'MENUNGGU_APPROVAL':
         buttons.push({
           label: 'Setujui',
           icon: <CheckCircle2 className="w-4 h-4" />,
-          onClick: () => onApprove?.(surat.id),
+          onClick: () => {
+            setApproveInitialMode('approve');
+            onApprove?.(surat.id, 'approve');
+          },
           variant: 'default',
           className: 'bg-emerald-600 hover:bg-emerald-700',
         });
         buttons.push({
           label: 'Tolak',
           icon: <XCircle className="w-4 h-4" />,
-          onClick: () => onApprove?.(surat.id),
+          onClick: () => {
+            setApproveInitialMode('reject');
+            onApprove?.(surat.id, 'reject');
+          },
           variant: 'destructive',
         });
+        break;
+      case 'DISETUJUI':
+      case 'DICETAK':
+      case 'DIARSIPKAN':
         buttons.push({
           label: 'Cetak',
           icon: <Printer className="w-4 h-4" />,
@@ -210,17 +225,8 @@ export function SuratDetail({ suratId, onProses, onApprove, onRefresh, onClose }
           variant: 'outline',
         });
         break;
-      case 'SELESAI':
-      case 'DITANDATANGANI':
-        buttons.push({
-          label: 'Cetak',
-          icon: <Printer className="w-4 h-4" />,
-          onClick: () => { window.open(`/api/surat/${surat.id}/pdf`, '_blank'); },
-          variant: 'outline',
-        });
-        break;
-      case 'DRAFT':
-      case 'DITOLAK':
+      case 'DITOLAK_KADES':
+      case 'DITOLAK_OPERATOR':
         buttons.push({
           label: 'Proses Ulang',
           icon: <Loader2 className="w-4 h-4" />,
@@ -231,7 +237,7 @@ export function SuratDetail({ suratId, onProses, onApprove, onRefresh, onClose }
         break;
     }
 
-    if (surat.status !== 'SELESAI' && surat.status !== 'DIBATALKAN' && surat.status !== 'DITOLAK') {
+    if (surat.status !== 'DISETUJUI' && surat.status !== 'DICETAK' && surat.status !== 'DIARSIPKAN' && surat.status !== 'DIBATALKAN' && surat.status !== 'DITOLAK_KADES' && surat.status !== 'DITOLAK_OPERATOR') {
       buttons.push({
         label: 'Batalkan',
         icon: <Ban className="w-4 h-4" />,

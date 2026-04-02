@@ -292,8 +292,10 @@ export function SuratDashboard({ onNavigate }: SuratDashboardProps) {
   }
 
   const pendingCount = data.metrics.pendingCount;
-  const selesaiBulanIni = data.statusCounts.SELESAI + data.statusCounts.DITANDATANGANI || 0;
-  const ditolakCount = data.statusCounts.DITOLAK || 0;
+  // Selesai = DISETUJUI + DICETAK + DIARSIPKAN
+  const selesaiBulanIni = (data.statusCounts.DISETUJUI || 0) + (data.statusCounts.DICETAK || 0) + (data.statusCounts.DIARSIPKAN || 0);
+  // Ditolak = DITOLAK_KADES + DITOLAK_OPERATOR
+  const ditolakCount = (data.statusCounts.DITOLAK_KADES || 0) + (data.statusCounts.DITOLAK_OPERATOR || 0);
 
   // Bar chart data
   const barData = data.monthlyTrend.map((item) => ({

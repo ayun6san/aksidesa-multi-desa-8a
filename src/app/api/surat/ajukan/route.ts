@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
         pemohonDusun: body.pemohonDusun || null,
         pemohonTelepon: body.pemohonTelepon || null,
         isiSurat,
-        status: 'DIAJUKAN',
+        status: 'MENUNGGU_PROSES',
         tanggalAjukan: new Date(),
         dokumenPendukung: body.dokumenPendukung
           ? (typeof body.dokumenPendukung === 'string' ? body.dokumenPendukung : JSON.stringify(body.dokumenPendukung))
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     await db.suratLog.create({
       data: {
         suratId: surat.id,
-        aksi: 'DIAJUKAN',
+        aksi: 'AJUKAN',
         userId: user.id,
         userName: user.namaLengkap || user.username,
         keterangan: 'Surat diajukan oleh pemohon',

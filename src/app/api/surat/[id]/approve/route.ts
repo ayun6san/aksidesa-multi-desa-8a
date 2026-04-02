@@ -9,7 +9,8 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// POST /api/surat/[id]/approve - Approve surat (admin/approver)
+// POST /api/surat/[id]/approve - Approve surat (admin/kades only)
+// Hanya status MENUNGGU_APPROVAL yang bisa disetujui → DISETUJUI
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await getCurrentUser();
@@ -65,42 +66,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Determine next status based on current status
-    let nextStatus: string;
-    let logAksi: string;
+    // Hanya surat dengan status MENUNGGU_APPROVAL yang bisa disetujui
+    const nextStatus = 'DISETUJUI';
 
-    switch (existing.status) {
-      case 'DIAJUKAN':
-        nextStatus = 'DIVERIFIKASI';
-        logAksi = 'DIVERIFIKASI_LULUS';
-        break;
-      case 'DIVERIFIKASI':
-        nextStatus = 'DIPROSES';
-        logAksi = 'DIPROSES';
-        break;
-      case 'DIPROSES':
-        nextStatus = 'DICETAK';
-        logAksi = 'DICETAK';
-        break;
-      case 'DICETAK':
-        nextStatus = 'DITANDATANGANI';
-        logAksi = 'DITANDATANGANI';
-        break;
-      case 'DITANDATANGANI':
-        nextStatus = 'SELESAI';
-        logAksi = 'DIARSIPKAN';
-        break;
-      default:
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Surat dengan status ${existing.status} tidak dapat disetujui`,
-          },
-          { status: 400 }
-        );
+    if (existing.status !== 'MENUNGGU_APPROVAL') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Surat dengan status ${existing.status} tidak dapat disetujui. Hanya surat "Menunggu Approval" yang dapat disetujui.`,
+        },
+        { status: 400 }
+      );
     }
 
-    // Validate transition
+    // Validate transition (should always pass given the check above, but double-check)
     if (!isValidStatusTransition(existing.status, nextStatus)) {
       return NextResponse.json(
         {
@@ -115,17 +94,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const updateData: Record<string, unknown> = {
       status: nextStatus,
       approverId: user.id,
-      catatanApprover: body.catatan || null,
+      tanggalSelesai: new Date(),
     };
 
-    if (nextStatus === 'DIPROSES') {
-      updateData.tanggalProses = new Date();
-    }
-    if (nextStatus === 'DICETAK') {
-      updateData.dicetakPada = new Date();
-    }
-    if (nextStatus === 'SELESAI') {
-      updateData.tanggalSelesai = new Date();
+    // Catatan dari approver (frontend mengirim catatanApprover)
+    if (body.catatanApprover) {
+      updateData.catatanApprover = body.catatanApprover;
+    } else if (body.catatan) {
+      updateData.catatanApprover = body.catatan;
     }
 
     const surat = await db.surat.update({
@@ -141,14 +117,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // Create surat log
+    // Create surat log - gunakan enum APPROVE yang valid
     await db.suratLog.create({
       data: {
         suratId: id,
-        aksi: logAksi as 'DIVERIFIKASI_LULUS' | 'DIPROSES' | 'DICETAK' | 'DITANDATANGANI' | 'DIARSIPKAN',
+        aksi: 'APPROVE',
         userId: user.id,
         userName: user.namaLengkap || user.username,
-        keterangan: body.catatan || `Surat disetujui oleh ${user.namaLengkap || user.username}`,
+        keterangan: body.catatanApprover || body.catatan || `Surat disetujui oleh ${user.namaLengkap || user.username}`,
         dataSebelum: JSON.stringify({ status: existing.status }),
         dataSesudah: JSON.stringify({ status: nextStatus }),
       },
@@ -160,7 +136,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       userName: user.username,
       aksi: 'UPDATE',
       modul: 'SURAT',
-      deskripsi: `Menyetujui surat ${existing.jenisSurat.nama} - status diubah ke ${nextStatus}`,
+      deskripsi: `Menyetujui surat ${existing.jenisSurat.nama} - status diubah ke Disetujui`,
       dataRef: {
         suratId: id,
         desaId: existing.desaId,
@@ -172,7 +148,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       success: true,
       data: surat,
-      message: `Surat berhasil disetujui. Status: ${nextStatus}`,
+      message: 'Surat berhasil disetujui',
     });
   } catch (error) {
     console.error('Error approving surat:', error);

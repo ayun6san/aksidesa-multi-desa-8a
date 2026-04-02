@@ -2,7 +2,7 @@
 
 import {
   FileEdit,
-  Send,
+  Clock,
   CheckCircle2,
   Loader2,
   Printer,
@@ -11,10 +11,14 @@ import {
   CircleCheck,
   Ban,
   FileSpreadsheet,
+  Hourglass,
+  Shield,
+  Archive,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getStatusLabel } from '@/lib/surat-utils';
 
+// STATUS_CONFIG sesuai Prisma enum SuratStatus
 const STATUS_CONFIG: Record<string, {
   icon: React.ComponentType<{ className?: string }>;
   className: string;
@@ -23,37 +27,41 @@ const STATUS_CONFIG: Record<string, {
     icon: FileEdit,
     className: 'bg-gray-100 text-gray-700 border-gray-200',
   },
-  DIAJUKAN: {
-    icon: Send,
+  MENUNGGU_PROSES: {
+    icon: Clock,
     className: 'bg-blue-100 text-blue-700 border-blue-200',
   },
-  DIVERIFIKASI: {
-    icon: CheckCircle2,
-    className: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-  },
-  DIPROSES: {
+  DALAM_PROSES: {
     icon: Loader2,
     className: 'bg-amber-100 text-amber-700 border-amber-200',
+  },
+  MENUNGGU_APPROVAL: {
+    icon: Hourglass,
+    className: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  },
+  DITOLAK_OPERATOR: {
+    icon: XCircle,
+    className: 'bg-red-100 text-red-700 border-red-200',
+  },
+  DITOLAK_KADES: {
+    icon: XCircle,
+    className: 'bg-red-200 text-red-900 border-red-300',
+  },
+  DISETUJUI: {
+    icon: CheckCircle2,
+    className: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   },
   DICETAK: {
     icon: Printer,
     className: 'bg-purple-100 text-purple-700 border-purple-200',
   },
-  DITANDATANGANI: {
-    icon: PenTool,
-    className: 'bg-teal-100 text-teal-700 border-teal-200',
-  },
-  DITOLAK: {
-    icon: XCircle,
-    className: 'bg-red-100 text-red-700 border-red-200',
-  },
-  SELESAI: {
-    icon: CircleCheck,
-    className: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  },
   DIBATALKAN: {
     icon: Ban,
     className: 'bg-slate-100 text-slate-600 border-slate-200',
+  },
+  DIARSIPKAN: {
+    icon: Archive,
+    className: 'bg-teal-100 text-teal-700 border-teal-200',
   },
 };
 
@@ -97,7 +105,7 @@ export function SuratStatusBadge({
         className,
       )}
     >
-      <Icon className={cn(iconSizes[size], status === 'DIPROSES' && 'animate-spin')} />
+      <Icon className={cn(iconSizes[size], status === 'DALAM_PROSES' && 'animate-spin')} />
       {showLabel && getStatusLabel(status)}
     </span>
   );

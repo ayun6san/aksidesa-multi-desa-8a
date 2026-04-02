@@ -63,7 +63,6 @@ interface RegisterStats {
 
 interface DesaInfo {
   namaDesa: string;
-  kodeDesaSurat: string | null;
   kecamatan: string | null;
   kabupaten: string | null;
   provinsi: string | null;
@@ -88,15 +87,17 @@ const KATEGORI_OPTIONS = [
   { value: 'LEMBAGA', label: 'Lembaga' },
 ];
 
+// Status options sesuai Prisma enum SuratStatus
 const STATUS_OPTIONS = [
-  { value: 'DIAJUKAN', label: 'Diajukan' },
-  { value: 'DIVERIFIKASI', label: 'Diverifikasi' },
-  { value: 'DIPROSES', label: 'Diproses' },
+  { value: 'MENUNGGU_PROSES', label: 'Menunggu Proses' },
+  { value: 'DALAM_PROSES', label: 'Dalam Proses' },
+  { value: 'MENUNGGU_APPROVAL', label: 'Menunggu Approval' },
+  { value: 'DISETUJUI', label: 'Disetujui' },
   { value: 'DICETAK', label: 'Dicetak' },
-  { value: 'DITANDATANGANI', label: 'Ditandatangani' },
-  { value: 'SELESAI', label: 'Selesai' },
-  { value: 'DITOLAK', label: 'Ditolak' },
+  { value: 'DITOLAK_KADES', label: 'Ditolak Kades' },
+  { value: 'DITOLAK_OPERATOR', label: 'Ditolak Operator' },
   { value: 'DIBATALKAN', label: 'Dibatalkan' },
+  { value: 'DIARSIPKAN', label: 'Diarsipkan' },
 ];
 
 // Generate year options (current year -5 to current year +1)

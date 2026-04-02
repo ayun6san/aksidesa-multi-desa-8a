@@ -284,6 +284,12 @@ export function SuratAjukanForm({ onNavigate, onSuccess }: SuratAjukanFormProps)
       return;
     }
 
+    // NIK validation - must be exactly 16 digits
+    if (pemohonNIK.trim() && !/^\d{16}$/.test(pemohonNIK.trim())) {
+      toast.error('NIK harus berupa 16 digit angka');
+      return;
+    }
+
     // Check required dynamic fields
     for (const ft of fieldTemplates) {
       if (ft.required && !dynamicFields[ft.key]?.trim()) {

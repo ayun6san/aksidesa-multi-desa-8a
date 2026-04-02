@@ -9,6 +9,33 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+// Valid status sesuai Prisma enum SuratStatus
+const VALID_STATUSES = [
+  'DRAFT',
+  'MENUNGGU_PROSES',
+  'DALAM_PROSES',
+  'MENUNGGU_APPROVAL',
+  'DITOLAK_OPERATOR',
+  'DITOLAK_KADES',
+  'DISETUJUI',
+  'DICETAK',
+  'DIBATALKAN',
+  'DIARSIPKAN',
+];
+
+// Map status ke log aksi yang sesuai dengan Prisma enum SuratLogAksi
+const STATUS_TO_AKSI: Record<string, string> = {
+  MENUNGGU_PROSES: 'AJUKAN',
+  DALAM_PROSES: 'PROSES',
+  MENUNGGU_APPROVAL: 'PROSES',
+  DISETUJUI: 'APPROVE',
+  DITOLAK_OPERATOR: 'REJECT',
+  DITOLAK_KADES: 'REJECT',
+  DICETAK: 'CETAK',
+  DIBATALKAN: 'BATAL',
+  DIARSIPKAN: 'ARSIP',
+};
+
 // PUT /api/surat/[id]/status - Update surat status (operator/approver)
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
@@ -47,14 +74,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const validStatuses = [
-      'DRAFT', 'DIAJUKAN', 'DIVERIFIKASI', 'DIPROSES',
-      'DICETAK', 'DITANDATANGANI', 'DITOLAK', 'SELESAI', 'DIBATALKAN',
-    ];
-
-    if (!validStatuses.includes(body.status)) {
+    // Validasi status harus sesuai Prisma enum
+    if (!VALID_STATUSES.includes(body.status)) {
       return NextResponse.json(
-        { success: false, error: 'Status tidak valid' },
+        { success: false, error: `Status tidak valid. Status yang diperbolehkan: ${VALID_STATUSES.join(', ')}` },
         { status: 400 }
       );
     }
@@ -95,19 +118,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Map status to log action
-    const statusToAksi: Record<string, string> = {
-      DIVERIFIKASI: 'DIVERIFIKASI_LULUS',
-      DIPROSES: 'DIPROSES',
-      DICETAK: 'DICETAK',
-      DITANDATANGANI: 'DITANDATANGANI',
-      DITOLAK: 'DITOLAK_KADES',
-      DIBATALKAN: 'DIBATALKAN',
-      DIAJUKAN: 'DIAJUKAN',
-      SELESAI: 'DIARSIPKAN',
-    };
-
-    const aksi = statusToAksi[body.status] || 'DIBUAT';
+    const aksi = STATUS_TO_AKSI[body.status] || 'PROSES';
 
     // Build update data
     const updateData: Record<string, unknown> = {
@@ -115,41 +126,58 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     };
 
     // Set timestamps based on status
-    if (body.status === 'DIAJUKAN' && !existing.tanggalAjukan) {
+    if (body.status === 'MENUNGGU_PROSES' && !existing.tanggalAjukan) {
       updateData.tanggalAjukan = new Date();
     }
-    if (body.status === 'DIPROSES') {
+    if (body.status === 'DALAM_PROSES' || body.status === 'MENUNGGU_APPROVAL') {
       updateData.tanggalProses = new Date();
       updateData.operatorId = user.id;
+    }
+    if (body.status === 'DISETUJUI') {
+      updateData.approverId = user.id;
+      updateData.tanggalSelesai = new Date();
+      if (body.catatanApprover) updateData.catatanApprover = body.catatanApprover;
+      if (body.catatan) updateData.catatanApprover = body.catatan;
     }
     if (body.status === 'DICETAK') {
       updateData.dicetakPada = new Date();
     }
-    if (body.status === 'SELESAI') {
-      updateData.tanggalSelesai = new Date();
-    }
-    if (body.status === 'DITOLAK') {
-      updateData.alasanDitolak = body.alasanDitolak || body.catatan || null;
+    if (body.status === 'DITOLAK_KADES' || body.status === 'DITOLAK_OPERATOR') {
+      updateData.alasanDitolak = body.alasanDitolak || body.alasan || body.catatan || null;
       if (['SUPER_ADMIN', 'ADMIN_DESA'].includes(user.role)) {
         updateData.approverId = user.id;
-        updateData.catatanApprover = body.catatan || null;
+        updateData.catatanApprover = body.catatanApprover || body.catatan || null;
       }
+    }
+    if (body.status === 'DIBATALKAN') {
+      updateData.tanggalSelesai = new Date();
+    }
+    if (body.status === 'DIARSIPKAN') {
+      updateData.tanggalSelesai = new Date();
     }
 
     // Update surat
     const surat = await db.surat.update({
       where: { id },
       data: updateData,
+      include: {
+        jenisSurat: {
+          select: { id: true, kode: true, nama: true },
+        },
+        desa: {
+          select: { id: true, namaDesa: true },
+        },
+      },
     });
 
     // Create surat log
     await db.suratLog.create({
       data: {
         suratId: id,
-        aksi: aksi as 'DIBUAT' | 'DIAJUKAN' | 'DIVERIFIKASI_LULUS' | 'DIVERIFIKASI_DITOLAK' | 'DIPROSES' | 'DICETAK' | 'DITANDATANGANI' | 'DITOLAK_KADES' | 'DIBATALKAN' | 'DIARSIPKAN',
+        aksi: aksi as 'AJUKAN' | 'PROSES' | 'APPROVE' | 'REJECT' | 'CETAK' | 'BATAL' | 'ARSIP',
         userId: user.id,
         userName: user.namaLengkap || user.username,
-        keterangan: body.catatan || `Status diubah dari ${existing.status} ke ${body.status}`,
+        keterangan: body.catatan || body.keterangan || `Status diubah dari ${existing.status} ke ${body.status}`,
         dataSebelum: JSON.stringify({ status: existing.status }),
         dataSesudah: JSON.stringify({ status: body.status }),
       },

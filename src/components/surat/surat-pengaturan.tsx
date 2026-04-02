@@ -471,7 +471,7 @@ export function SuratPengaturan({ onNavigate }: SuratPengaturanProps) {
           </Button>
           <Button
             onClick={handleSave}
-            disabled={saving || !hasChanges}
+            disabled={saving || (!hasChanges && originalConfig !== null)}
             className="min-w-[140px]"
           >
             {saving ? (

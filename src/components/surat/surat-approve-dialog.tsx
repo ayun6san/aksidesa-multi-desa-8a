@@ -46,11 +46,12 @@ interface SuratApproveDialogProps {
   suratId: string | null;
   open: boolean;
   onClose: () => void;
+  initialMode?: ApprovalMode;
 }
 
 // ============ MAIN COMPONENT ============
 
-export function SuratApproveDialog({ suratId, open, onClose }: SuratApproveDialogProps) {
+export function SuratApproveDialog({ suratId, open, onClose, initialMode }: SuratApproveDialogProps) {
   const [surat, setSurat] = useState<SuratData | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -78,8 +79,8 @@ export function SuratApproveDialog({ suratId, open, onClose }: SuratApproveDialo
   useEffect(() => {
     if (open && suratId) {
       fetchSurat();
-      // Determine mode based on status
-      setMode(null);
+      // Set mode based on initialMode prop, otherwise null (show action selection)
+      setMode(initialMode || null);
       setAlasanTolak('');
       setCatatanApprover('');
     }
@@ -89,11 +90,22 @@ export function SuratApproveDialog({ suratId, open, onClose }: SuratApproveDialo
       setAlasanTolak('');
       setCatatanApprover('');
     }
-  }, [open, suratId, fetchSurat]);
+  }, [open, suratId, fetchSurat, initialMode]);
 
   // Check if surat can be approved/rejected
-  const canApprove = surat && ['DIPROSES', 'DICETAK', 'DIVERIFIKASI'].includes(surat.status);
-  const canReject = surat && ['DIAJUKAN', 'DIVERIFIKASI', 'DIPROSES', 'DICETAK'].includes(surat.status);
+  // Kades: MENUNGGU_APPROVAL can approve/reject → DITOLAK_KADES
+  // Operator: MENUNGGU_PROSES can reject → DITOLAK_OPERATOR
+  const canApprove = surat && surat.status === 'MENUNGGU_APPROVAL';
+  const canReject = surat && (surat.status === 'MENUNGGU_APPROVAL' || surat.status === 'MENUNGGU_PROSES');
+
+  // Get reject description based on surat status
+  const getRejectDescription = () => {
+    if (!surat) return '';
+    if (surat.status === 'MENUNGGU_PROSES') {
+      return `Surat ${surat.jenisSurat.nama} untuk ${surat.pemohonNama} akan ditolak oleh operator. Pemohon akan diberitahu melalui alasan yang Anda berikan.`;
+    }
+    return `Surat ${surat.jenisSurat.nama} untuk ${surat.pemohonNama} akan ditolak. Pemohon akan diberitahu melalui alasan yang Anda berikan.`;
+  };
 
   const handleApprove = async () => {
     if (!suratId) return;
@@ -323,8 +335,7 @@ export function SuratApproveDialog({ suratId, open, onClose }: SuratApproveDialo
                       </p>
                     </div>
                     <p className="text-xs text-red-700">
-                      Surat {surat.jenisSurat.nama} untuk {surat.pemohonNama} akan ditolak.
-                      Pemohon akan diberitahu melalui alasan yang Anda berikan.
+                      {getRejectDescription()}
                     </p>
                   </div>
 
@@ -356,14 +367,16 @@ export function SuratApproveDialog({ suratId, open, onClose }: SuratApproveDialo
                     />
                   </div>
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setMode(null)}
-                    className="text-xs"
-                  >
-                    Kembali ke Pilihan
-                  </Button>
+                  {!initialMode && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMode(null)}
+                      className="text-xs"
+                    >
+                      Kembali ke Pilihan
+                    </Button>
+                  )}
                 </div>
               </>
             )}

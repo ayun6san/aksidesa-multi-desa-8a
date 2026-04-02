@@ -231,8 +231,8 @@ export async function PUT(request: NextRequest) {
     const updateData: Record<string, unknown> = {
       formatNomorSurat: body.formatNomorSurat !== undefined ? body.formatNomorSurat : existing?.formatNomorSurat || '{nomor}/{kodeDesa}/{bulan}/{tahun}',
       digitPadding: body.digitPadding !== undefined ? Number(body.digitPadding) : existing?.digitPadding || 3,
-      formatBulan: body.formatBulan || existing?.formatBulan || 'ROMAWI',
-      resetNomorPer: body.resetNomorPer || existing?.resetNomorPer || 'PER_TAHUN',
+      formatBulan: body.formatBulan ?? existing?.formatBulan ?? 'ROMAWI',
+      resetNomorPer: body.resetNomorPer ?? existing?.resetNomorPer ?? 'PER_TAHUN',
       formatNomorRegister: body.formatNomorRegister !== undefined ? body.formatNomorRegister : existing?.formatNomorRegister || '{nomor}/{kodeDesa}/Reg/{tahun}',
       digitPaddingReg: body.digitPaddingReg !== undefined ? Number(body.digitPaddingReg) : existing?.digitPaddingReg || 4,
       kodeDesaSurat: body.kodeDesaSurat !== undefined ? body.kodeDesaSurat : existing?.kodeDesaSurat || '',

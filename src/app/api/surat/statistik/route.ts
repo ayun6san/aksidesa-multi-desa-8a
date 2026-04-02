@@ -52,16 +52,18 @@ export async function GET(request: NextRequest) {
       _count: { id: true },
     });
 
+    // Status map sesuai Prisma enum SuratStatus
     const statusMap: Record<string, number> = {
       DRAFT: 0,
-      DIAJUKAN: 0,
-      DIVERIFIKASI: 0,
-      DIPROSES: 0,
+      MENUNGGU_PROSES: 0,
+      DALAM_PROSES: 0,
+      MENUNGGU_APPROVAL: 0,
+      DITOLAK_OPERATOR: 0,
+      DITOLAK_KADES: 0,
+      DISETUJUI: 0,
       DICETAK: 0,
-      DITANDATANGANI: 0,
-      DITOLAK: 0,
-      SELESAI: 0,
       DIBATALKAN: 0,
+      DIARSIPKAN: 0,
     };
 
     for (const sc of statusCounts) {
@@ -70,7 +72,13 @@ export async function GET(request: NextRequest) {
 
     const totalSurat = Object.values(statusMap).reduce((a, b) => a + b, 0);
 
-    // Get kategori counts
+    // Batch-load ALL suratJenis records upfront to avoid N+1 queries
+    const allJenisRecords = await db.suratJenis.findMany({
+      select: { id: true, kategori: true, nama: true },
+    });
+    const jenisMap = new Map(allJenisRecords.map((j) => [j.id, j]));
+
+    // Get kategori counts (no N+1 - using batch-loaded jenisMap)
     const kategoriCounts = await db.surat.groupBy({
       by: ['jenisSuratId'],
       where: baseWhere,
@@ -79,10 +87,7 @@ export async function GET(request: NextRequest) {
 
     const kategoriMap: Record<string, number> = {};
     for (const kc of kategoriCounts) {
-      const jenis = await db.suratJenis.findUnique({
-        where: { id: kc.jenisSuratId },
-        select: { kategori: true, nama: true },
-      });
+      const jenis = jenisMap.get(kc.jenisSuratId);
       if (jenis) {
         const cat = jenis.kategori;
         kategoriMap[cat] = (kategoriMap[cat] || 0) + kc._count.id;
@@ -112,8 +117,14 @@ export async function GET(request: NextRequest) {
       let ditolak = 0;
       for (const ms of monthStats) {
         total += ms._count.id;
-        if (ms.status === 'SELESAI' || ms.status === 'DITANDATANGANI') selesai += ms._count.id;
-        if (ms.status === 'DITOLAK') ditolak += ms._count.id;
+        // Selesai = DISETUJUI atau DICETAK atau DIARSIPKAN
+        if (ms.status === 'DISETUJUI' || ms.status === 'DICETAK' || ms.status === 'DIARSIPKAN') {
+          selesai += ms._count.id;
+        }
+        // Ditolak = DITOLAK_KADES atau DITOLAK_OPERATOR
+        if (ms.status === 'DITOLAK_KADES' || ms.status === 'DITOLAK_OPERATOR') {
+          ditolak += ms._count.id;
+        }
       }
 
       const bulanNames = [
@@ -131,7 +142,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get top 5 most requested surat jenis
+    // Get top 5 most requested surat jenis (using batch-loaded jenisMap - no N+1)
     const topJenis = await db.surat.groupBy({
       by: ['jenisSuratId'],
       where: baseWhere,
@@ -140,20 +151,15 @@ export async function GET(request: NextRequest) {
       take: 5,
     });
 
-    const topJenisData = await Promise.all(
-      topJenis.map(async (tj) => {
-        const jenis = await db.suratJenis.findUnique({
-          where: { id: tj.jenisSuratId },
-          select: { id: true, nama: true, kategori: true },
-        });
-        return {
-          id: tj.jenisSuratId,
-          nama: jenis?.nama || 'Unknown',
-          kategori: jenis?.kategori || null,
-          total: tj._count.id,
-        };
-      })
-    );
+    const topJenisData = topJenis.map((tj) => {
+      const jenis = jenisMap.get(tj.jenisSuratId);
+      return {
+        id: tj.jenisSuratId,
+        nama: jenis?.nama || 'Unknown',
+        kategori: jenis?.kategori || null,
+        total: tj._count.id,
+      };
+    });
 
     // Get recent surat (last 5)
     const recentSurat = await db.surat.findMany({
@@ -170,6 +176,13 @@ export async function GET(request: NextRequest) {
       take: 5,
     });
 
+    // Hitung total ditolak (DITOLAK_KADES + DITOLAK_OPERATOR)
+    const totalDitolak = statusMap.DITOLAK_KADES + statusMap.DITOLAK_OPERATOR;
+    // Hitung total selesai (DISETUJUI + DICETAK + DIARSIPKAN)
+    const totalSelesai = statusMap.DISETUJUI + statusMap.DICETAK + statusMap.DIARSIPKAN;
+    // Pending = MENUNGGU_PROSES + DALAM_PROSES + MENUNGGU_APPROVAL
+    const totalPending = statusMap.MENUNGGU_PROSES + statusMap.DALAM_PROSES + statusMap.MENUNGGU_APPROVAL;
+
     // Calculate performance metrics
     const avgProcessingDays = await getAverageProcessingDays(baseWhere);
 
@@ -185,12 +198,12 @@ export async function GET(request: NextRequest) {
         metrics: {
           avgProcessingDays,
           completionRate: totalSurat > 0
-            ? Math.round(((statusMap.SELESAI + statusMap.DITANDATANGANI) / totalSurat) * 100)
+            ? Math.round((totalSelesai / totalSurat) * 100)
             : 0,
           rejectionRate: totalSurat > 0
-            ? Math.round((statusMap.DITOLAK / totalSurat) * 100)
+            ? Math.round((totalDitolak / totalSurat) * 100)
             : 0,
-          pendingCount: statusMap.DIAJUKAN + statusMap.DIVERIFIKASI + statusMap.DIPROSES,
+          pendingCount: totalPending,
         },
       },
     });
@@ -205,12 +218,13 @@ export async function GET(request: NextRequest) {
 
 /**
  * Calculate average processing days (from submission to completion)
+ * Selesai = DISETUJUI, DICETAK, DIARSIPKAN
  */
 async function getAverageProcessingDays(where: Record<string, unknown>): Promise<number> {
   const completedSurat = await db.surat.findMany({
     where: {
       ...where,
-      status: { in: ['SELESAI', 'DITANDATANGANI'] },
+      status: { in: ['DISETUJUI', 'DICETAK', 'DIARSIPKAN'] },
       tanggalAjukan: { not: null },
       tanggalSelesai: { not: null },
     },

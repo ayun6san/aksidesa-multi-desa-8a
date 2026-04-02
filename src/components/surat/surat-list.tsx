@@ -6,7 +6,7 @@ import {
   Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   ArrowUpDown, ArrowUp, ArrowDown, MoreHorizontal, Printer,
   RotateCcw, Clock, LayoutGrid, List as ListIcon, RefreshCw,
-  Inbox,
+  Inbox, Shield,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -76,17 +76,19 @@ interface SuratListProps {
 }
 
 // ============ STATUS TABS ============
+// Sesuai Prisma enum SuratStatus
 
 const STATUS_TABS = [
   { id: 'ALL', label: 'Semua' },
-  { id: 'DRAFT', label: 'Draft' },
-  { id: 'DIAJUKAN', label: 'Menunggu' },
-  { id: 'DIVERIFIKASI', label: 'Diverifikasi' },
-  { id: 'DIPROSES', label: 'Diproses' },
+  { id: 'MENUNGGU_PROSES', label: 'Menunggu Proses' },
+  { id: 'DALAM_PROSES', label: 'Diproses' },
+  { id: 'MENUNGGU_APPROVAL', label: 'Menunggu Approval' },
+  { id: 'DISETUJUI', label: 'Disetujui' },
   { id: 'DICETAK', label: 'Dicetak' },
-  { id: 'SELESAI', label: 'Selesai' },
-  { id: 'DITOLAK', label: 'Ditolak' },
+  { id: 'DITOLAK_KADES', label: 'Ditolak Kades' },
+  { id: 'DITOLAK_OPERATOR', label: 'Ditolak Operator' },
   { id: 'DIBATALKAN', label: 'Batal' },
+  { id: 'DIARSIPKAN', label: 'Diarsipkan' },
 ];
 
 const KATEGORI_OPTIONS = [
@@ -137,6 +139,7 @@ export function SuratList({ onNavigate }: SuratListProps) {
   const [detailSuratId, setDetailSuratId] = useState<string | null>(null);
   const [prosesSuratId, setProsesSuratId] = useState<string | null>(null);
   const [approveSuratId, setApproveSuratId] = useState<string | null>(null);
+  const [approveInitialMode, setApproveInitialMode] = useState<'approve' | 'reject' | undefined>(undefined);
 
   // Search debounce
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -236,6 +239,7 @@ export function SuratList({ onNavigate }: SuratListProps) {
     setDetailSuratId(null);
     setProsesSuratId(null);
     setApproveSuratId(null);
+    setApproveInitialMode(undefined);
     fetchSurat();
   };
 
@@ -533,25 +537,46 @@ export function SuratList({ onNavigate }: SuratListProps) {
                             <Eye className="w-4 h-4 mr-2" />
                             Lihat Detail
                           </DropdownMenuItem>
-                          {(surat.status === 'DIAJUKAN' || surat.status === 'DIVERIFIKASI') && (
-                            <DropdownMenuItem onClick={() => setProsesSuratId(surat.id)}>
-                              <Loader2 className="w-4 h-4 mr-2" />
-                              Proses
-                            </DropdownMenuItem>
-                          )}
-                          {(surat.status === 'DIPROSES' || surat.status === 'DICETAK') && (
+                          {surat.status === 'MENUNGGU_PROSES' && (
                             <>
-                              <DropdownMenuItem onClick={() => setApproveSuratId(surat.id)}>
-                                <CheckCircle2 className="w-4 h-4 mr-2" />
-                                Setujui
+                              <DropdownMenuItem onClick={() => setProsesSuratId(surat.id)}>
+                                <Loader2 className="w-4 h-4 mr-2" />
+                                Proses
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setApproveSuratId(surat.id)} className="text-red-600">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setApproveSuratId(surat.id);
+                                  setApproveInitialMode('reject');
+                                }}
+                                className="text-red-600"
+                              >
                                 <XCircle className="w-4 h-4 mr-2" />
                                 Tolak
                               </DropdownMenuItem>
                             </>
                           )}
-                          {(surat.status === 'SELESAI' || surat.status === 'DITANDATANGANI' || surat.status === 'DICETAK') && (
+                          {surat.status === 'MENUNGGU_APPROVAL' && (
+                            <>
+                              <DropdownMenuItem onClick={() => {
+                                setApproveSuratId(surat.id);
+                                setApproveInitialMode('approve');
+                              }}>
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                Setujui
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setApproveSuratId(surat.id);
+                                  setApproveInitialMode('reject');
+                                }}
+                                className="text-red-600"
+                              >
+                                <XCircle className="w-4 h-4 mr-2" />
+                                Tolak
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {(surat.status === 'DISETUJUI' || surat.status === 'DICETAK' || surat.status === 'DIARSIPKAN') && (
                             <DropdownMenuItem onClick={() => {
                               window.open(`/api/surat/${surat.id}/pdf`, '_blank');
                             }}>
@@ -559,10 +584,10 @@ export function SuratList({ onNavigate }: SuratListProps) {
                               Cetak
                             </DropdownMenuItem>
                           )}
-                          {surat.status === 'DITOLAK' && (
+                          {(surat.status === 'DITOLAK_KADES' || surat.status === 'DITOLAK_OPERATOR') && (
                             <DropdownMenuItem onClick={() => setProsesSuratId(surat.id)}>
                               <RotateCcw className="w-4 h-4 mr-2" />
-                              Ajukan Ulang
+                              Proses Ulang
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
@@ -580,6 +605,7 @@ export function SuratList({ onNavigate }: SuratListProps) {
               page={pagination.page}
               totalPages={pagination.totalPages}
               total={pagination.total}
+              limit={pagination.limit}
               onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
             />
           )}
@@ -636,7 +662,7 @@ export function SuratList({ onNavigate }: SuratListProps) {
                         <Eye className="w-3 h-3 mr-1" />
                         Detail
                       </Button>
-                      {(surat.status === 'DIAJUKAN' || surat.status === 'DIVERIFIKASI') && (
+                      {surat.status === 'MENUNGGU_PROSES' && (
                         <Button
                           size="sm"
                           className="flex-1 h-8 text-xs"
@@ -647,6 +673,19 @@ export function SuratList({ onNavigate }: SuratListProps) {
                         >
                           <Loader2 className="w-3 h-3 mr-1" />
                           Proses
+                        </Button>
+                      )}
+                      {surat.status === 'MENUNGGU_APPROVAL' && (
+                        <Button
+                          size="sm"
+                          className="flex-1 h-8 text-xs bg-indigo-600 hover:bg-indigo-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setApproveSuratId(surat.id);
+                          }}
+                        >
+                          <Shield className="w-3 h-3 mr-1" />
+                          Review
                         </Button>
                       )}
                     </div>
@@ -665,7 +704,7 @@ export function SuratList({ onNavigate }: SuratListProps) {
             <SuratDetail
               suratId={detailSuratId}
               onProses={(id) => { setDetailSuratId(null); setProsesSuratId(id); }}
-              onApprove={(id) => { setDetailSuratId(null); setApproveSuratId(id); }}
+              onApprove={(id, mode) => { setDetailSuratId(null); setApproveSuratId(id); if (mode) setApproveInitialMode(mode); }}
               onRefresh={handleRefresh}
               onClose={() => setDetailSuratId(null)}
             />
@@ -685,6 +724,7 @@ export function SuratList({ onNavigate }: SuratListProps) {
         suratId={approveSuratId}
         open={!!approveSuratId}
         onClose={handleDialogClose}
+        initialMode={approveInitialMode}
       />
     </div>
   );
@@ -692,10 +732,11 @@ export function SuratList({ onNavigate }: SuratListProps) {
 
 // ============ PAGINATION ============
 
-function Pagination({ page, totalPages, total, onPageChange }: {
+function Pagination({ page, totalPages, total, limit, onPageChange }: {
   page: number;
   totalPages: number;
   total: number;
+  limit: number;
   onPageChange: (page: number) => void;
 }) {
   const pages: (number | 'ellipsis')[] = [];
@@ -716,7 +757,7 @@ function Pagination({ page, totalPages, total, onPageChange }: {
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-100">
       <p className="text-xs text-gray-500">
-        Menampilkan {(page - 1) * 20 + 1}-{Math.min(page * 20, total)} dari {total} surat
+        Menampilkan {(page - 1) * pagination.limit + 1}-{Math.min(page * pagination.limit, total)} dari {total} surat
       </p>
       <div className="flex items-center gap-1">
         <Button
