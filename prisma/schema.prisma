@@ -1,0 +1,1413 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User roles
+enum UserRole {
+  SUPER_ADMIN    // Admin platform - mengelola semua desa
+  ADMIN_DESA     // Admin desa - mengelola desa sendiri
+  OPERATOR       // Operator desa - input data kependudukan
+  WARGA          // Warga - akses data pribadi
+}
+
+// User status
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// Paket langganan desa (untuk SaaS)
+enum PaketDesa {
+  GRATIS
+  BASIC
+  PREMIUM
+  ENTERPRISE
+}
+
+// Desa/Village data
+model Desa {
+  id              String   @id @default(cuid())
+  
+  // Identitas Desa
+  namaDesa        String
+  slug            String   @unique  // URL-friendly identifier
+  kodeDesa        String   @unique
+  kodePos         String?
+  kecamatan       String
+  kabupaten       String
+  provinsi        String
+  negara          String   @default("Indonesia")
+  
+  // Kontak
+  alamatKantor    String?
+  telepon         String?
+  email           String?
+  website         String?
+  
+  // Logo & Lambang
+  logo            String?        // Logo Desa
+  logoKabupaten   String?        // Logo Kabupaten
+  logoProvinsi    String?        // Logo Provinsi
+  
+  // Visi & Misi
+  visi            String?
+  misi            String?        // JSON array of misi items
+  
+  // Data Geografis
+  luasWilayah     String?        // dalam km² atau ha
+  ketinggian      String?        // dalam meter dpl
+  curahHujan      String?        // mm/tahun
+  batasUtara      String?
+  batasSelatan    String?
+  batasTimur      String?
+  batasBarat      String?
+  
+  // Sejarah
+  tanggalBerdiri  DateTime?
+  hariJadi        String?        // Hari jadi desa (tanggal peringatan)
+  sejarahSingkat  String?        // Text area untuk sejarah
+  
+  // Status Langganan (SaaS)
+  paket           PaketDesa  @default(GRATIS)
+  isActive        Boolean    @default(true)
+  tanggalAktif    DateTime?
+  tanggalExpired  DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  users           User[]
+  dusun           Dusun[]
+  kk              KK[]
+  penduduk        Penduduk[]
+  pendatang       Pendatang[]
+  peristiwa       PeristiwaKependudukan[]
+  perangkatDesa   PerangkatDesa[]
+  bpd             BPD[]
+  lpm             LPM[]
+  mui             MUI[]
+  karangTaruna    KarangTaruna[]
+  pKK             PKK[]
+  ketuaRW          KetuaRW[]
+  ketuaRT          KetuaRT[]
+  linmas           Linmas[]
+  bumdes           Bumdes[]
+  koperasi         Koperasi[]
+  monitoringData  MonitoringData[]
+  suratJenis       SuratJenis[]
+  suratKonfigurasi SuratKonfigurasi?
+  surat            Surat[]
+  nomorSurat       NomorSurat[]
+  nomorRegister    NomorRegister[]
+  
+  @@index([slug])
+  @@index([kodeDesa])
+  @@index([isActive])
+}
+
+// Dusun (Hamlet/Village Subdivision)
+model Dusun {
+  id              String   @id @default(cuid())
+  nama            String
+  kode            String?  // Kode dusun
+  jumlahKK        Int      @default(0)
+  jumlahPenduduk  Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  desaId          String
+  desa            Desa     @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  rw              RW[]
+  
+  // Relations for Kependudukan
+  kk              KK[]
+  pendatang       Pendatang[]
+  
+  @@index([desaId])
+}
+
+// RW (Rukun Warga)
+model RW {
+  id              String   @id @default(cuid())
+  nomor           String   // Nomor RW (contoh: "001", "002")
+  jumlahKK        Int      @default(0)
+  jumlahPenduduk  Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  dusunId         String
+  dusun           Dusun    @relation(fields: [dusunId], references: [id], onDelete: Cascade)
+  rt              RT[]
+  
+  @@unique([dusunId, nomor]) // RW unik per dusun
+  @@index([dusunId])
+}
+
+// RT (Rukun Tetangga)
+model RT {
+  id              String   @id @default(cuid())
+  nomor           String   // Nomor RT (contoh: "001", "002")
+  jumlahKK        Int      @default(0)
+  jumlahPenduduk  Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  rwId            String
+  rw              RW       @relation(fields: [rwId], references: [id], onDelete: Cascade)
+  
+  // Relations for Kependudukan
+  kk              KK[]
+  pendatang       Pendatang[]
+  
+  @@unique([rwId, nomor]) // RT unik per RW
+  @@index([rwId])
+}
+
+// User model
+model User {
+  id                    String      @id @default(cuid())
+  namaLengkap           String
+  username              String      @unique
+  email                 String      @unique
+  noHp                  String?
+  password              String      // Hashed password
+  role                  UserRole    @default(WARGA)
+  status                UserStatus  @default(ACTIVE)
+  avatar                String?
+  isFirstChild          Boolean     @default(false) // First user (super admin)
+  lastLoginAt           DateTime?
+  failedLoginCount      Int         @default(0)
+  lockedUntil           DateTime?
+  wajibGantiPassword   Boolean     @default(false) // Must change password on next login
+  pertanyaanKeamanan    String?     // Security question for password reset
+  jawabanKeamanan       String?     // Hashed answer for security question
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  desaId                String?     // null untuk SUPER_ADMIN
+  desa                  Desa?       @relation(fields: [desaId], references: [id])
+  sessions              Session[]
+  logAktivitas          LogAktivitas[]
+  notifikasi            Notifikasi[]
+  operatorSurat         Surat[]   @relation("OperatorSurat")
+  approverSurat         Surat[]   @relation("ApproverSurat")
+  
+  @@index([desaId])
+  @@index([role])
+}
+
+// Session management
+model Session {
+  id              String   @id @default(cuid())
+  userId          String
+  token           String   @unique
+  deviceInfo      String?
+  ipAddress       String?
+  userAgent       String?
+  isActive        Boolean  @default(true)
+  lastActivityAt  DateTime @default(now())
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([token])
+  @@index([userId])
+}
+
+// Activity Log (Audit Trail)
+model LogAktivitas {
+  id              String   @id @default(cuid())
+  userId          String?
+  userName        String   // Store username for historical record
+  aksi            String   // Action: LOGIN, LOGOUT, TAKEOVER, CREATE, UPDATE, DELETE, etc.
+  modul           String   // Module: USER, PENDUDUK, SURAT, etc.
+  deskripsi       String   // Description of the action
+  dataRef         String?  // JSON string of affected data reference
+  deviceInfo      String?
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+  
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([modul])
+  @@index([createdAt])
+}
+
+// Notification system
+model Notifikasi {
+  id              String   @id @default(cuid())
+  userId          String   // Target user
+  judul           String
+  pesan           String
+  tipe            String   // INFO, WARNING, SUCCESS, ERROR
+  isRead          Boolean  @default(false)
+  link            String?  // Optional link to related page
+  createdAt       DateTime @default(now())
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([isRead])
+}
+
+// Statistics data (for dashboard) - per desa
+model Statistik {
+  id              String   @id @default(cuid())
+  desaId          String?  // null untuk statistik nasional (super admin)
+  tanggal         DateTime @default(now())
+  totalPenduduk   Int      @default(0)
+  totalKK         Int      @default(0)
+  pendatang       Int      @default(0)
+  kematian        Int      @default(0)
+  kelahiran       Int      @default(0)
+  pindah          Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([desaId])
+  @@index([tanggal])
+}
+
+// ==================== KEPENDUDUKAN ====================
+
+// Jenis Kelamin
+enum JenisKelamin {
+  LAKI_LAKI
+  PEREMPUAN
+}
+
+// Agama
+enum Agama {
+  ISLAM
+  KRISTEN
+  KATOLIK
+  HINDU
+  BUDDHA
+  KONGHUCU
+  LAINNYA
+}
+
+// Status Perkawinan
+enum StatusPerkawinan {
+  BELUM_KAWIN
+  KAWIN_TERCATAT
+  KAWIN_TIDAK_TERCATAT
+  CERAI_HIDUP_TERCATAT
+  CERAI_HIDUP_TIDAK_TERCATAT
+  CERAI_MATI
+}
+
+// Status Penduduk
+enum StatusPenduduk {
+  TETAP
+  PENDATANG
+  PINDAH
+  MENINGGAL
+}
+
+// Status Anak (Yatim/Piatu)
+enum StatusAnak {
+  BUKAN_YATIM_PIATU
+  YATIM
+  PIATU
+  YATIM_PIATU
+}
+
+// Jenis Peristiwa Kependudukan
+enum JenisPeristiwa {
+  KELAHIRAN
+  KEMATIAN
+  PINDAH_MASUK
+  PINDAH_KELUAR
+  PERKAWINAN
+  PERCERAIAN
+  PENGADOPSIAN
+  MUTASI_KK
+}
+
+// Hubungan Keluarga dalam KK
+enum HubunganKeluarga {
+  KEPALA_KELUARGA
+  SUAMI
+  ISTRI
+  ANAK
+  ANAK_TIRI
+  ANAK_ANGKAT
+  MENANTU
+  MERTUA
+  CUCU
+  KAKEK
+  NENEK
+  ORANG_TUA
+  FAMILI_LAIN
+  PEMBANTU
+  LAINNYA
+}
+
+// Jenis Tempat Tinggal
+enum JenisTempatTinggal {
+  MILIK_SENDIRI
+  KONTRAK
+  SEWA
+  RUMAH_ORANGTUA
+  RUMAH_SAUDARA
+  RUMAH_DINAS
+  LAINNYA
+}
+
+// Kartu Keluarga (KK)
+model KK {
+  id              String   @id @default(cuid())
+  nomorKK         String?  @unique
+  
+  // Tanggal Terbit KK
+  tanggalTerbit   DateTime?
+  
+  // Jenis Tempat Tinggal
+  jenisTempatTinggal JenisTempatTinggal @default(MILIK_SENDIRI)
+  
+  // Alamat
+  alamat          String
+  
+  // Wilayah (melalui RT)
+  rtId            String?
+  rt              RT?      @relation(fields: [rtId], references: [id])
+  dusunId         String?
+  dusun           Dusun?   @relation(fields: [dusunId], references: [id])
+  
+  // Relasi ke Desa (untuk multi-tenant)
+  desaId          String
+  desa            Desa     @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Koordinat
+  latitude        String?
+  longitude       String?
+  
+  // Dokumen
+  scanKK          String?   // Base64 atau URL foto KK
+  fotoRumah       String?   // Base64 atau URL foto rumah
+  
+  // Kepala Keluarga
+  kepalaKeluargaId String?
+  kepalaKeluarga   Penduduk? @relation("KepalaKK", fields: [kepalaKeluargaId], references: [id], onDelete: SetNull)
+  
+  // Status
+  isActive        Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  anggota         Penduduk[]
+  peristiwa       PeristiwaKependudukan[]
+  
+  @@index([nomorKK])
+  @@index([dusunId])
+  @@index([desaId])
+  @@index([kepalaKeluargaId])
+}
+
+// Status KTP
+enum StatusKTP {
+  BELUM_BUAT
+  SUDAH_BUAT
+  HILANG
+  DALAM_PROSES
+}
+
+// Jenis Disabilitas
+enum JenisDisabilitas {
+  TIDAK_ADA
+  FISIK
+  NETRA
+  RUNGU
+  WICARA
+  MENTAL
+  INTELEKTUAL
+  LAINNYA
+}
+
+// Kewarganegaraan
+enum Kewarganegaraan {
+  WNI
+  WNA
+}
+
+// Penduduk
+model Penduduk {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa (untuk multi-tenant)
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // ========== IDENTITAS ==========
+  nik               String?           @unique
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  golonganDarah     String?           // A, B, AB, O
+  agama             Agama             @default(ISLAM)
+  suku              String?           // Suku/Etnis
+  
+  // ========== STATUS PERKAWINAN ==========
+  statusPerkawinan  StatusPerkawinan  @default(BELUM_KAWIN)
+  aktaPerkawinan    String?           // No. Akta Nikah
+  tanggalPerkawinan DateTime?         // Tanggal menikah
+  aktaPerceraian    String?           // No. Akta Cerai
+  tanggalPerceraian DateTime?         // Tanggal cerai
+  
+  // ========== PEKERJAAN & PENDIDIKAN ==========
+  pekerjaan         String?
+  pendidikan        String?
+  penghasilan       String?           // Range penghasilan
+  
+  // ========== KEWARGANEGARAAN ==========
+  kewarganegaraan   Kewarganegaraan   @default(WNI)
+  negaraAsal        String?           // Negara asal (untuk WNA)
+  noPaspor          String?
+  noKitasKitap      String?
+  tanggalMasuk      DateTime?         // Tanggal masuk Indonesia (WNA)
+  
+  // ========== DOKUMEN ==========
+  noAktaKelahiran   String?
+  statusKTP         StatusKTP         @default(BELUM_BUAT)
+  noBPJSKesehatan   String?
+  noBPJSTenagakerja String?
+  npwp              String?
+  
+  // ========== DATA ORANG TUA ==========
+  namaAyah          String?
+  nikAyah           String?
+  namaIbu           String?
+  nikIbu            String?
+  anakKe            Int?              // Anak ke-berapa
+  jumlahSaudara     Int?              // Jumlah saudara kandung
+  
+  // ========== KARTU KELUARGA ==========
+  kkId              String?
+  kk                KK?               @relation(fields: [kkId], references: [id])
+  hubunganKeluarga  HubunganKeluarga?
+  urutanDalamKK     Int               @default(1)
+
+  // ========== STATUS ANAK (YATIM/PIATU) ==========
+  statusAnak        StatusAnak        @default(BUKAN_YATIM_PIATU)
+
+  // Orang tua (direct link, lintas KK)
+  ayahId            String?
+  ayah              Penduduk?         @relation("AyahAnak", fields: [ayahId], references: [id], onDelete: SetNull)
+  ibuId             String?
+  ibu               Penduduk?         @relation("IbuAnak", fields: [ibuId], references: [id], onDelete: SetNull)
+  anakAyah          Penduduk[]        @relation("AyahAnak")
+  anakIbu           Penduduk[]        @relation("IbuAnak")
+
+  // Pasangan (untuk tracking perkawinan)
+  pasanganId        String?
+  pasangan          Penduduk?         @relation("Pasangan", fields: [pasanganId], references: [id], onDelete: SetNull)
+  istriSuami        Penduduk[]        @relation("Pasangan")
+  kepalaKK          KK[]              @relation("KepalaKK")
+  
+  // ========== KONTAK ==========
+  email             String?
+  noHP              String?
+  
+  // ========== KESEHATAN & DISABILITAS ==========
+  jenisDisabilitas  JenisDisabilitas  @default(TIDAK_ADA)
+  keteranganDisabilitas String?
+  penyakitKronis    String?           // Diabetes, Hipertensi, dll
+  
+  // ========== STATUS ==========
+  status            StatusPenduduk    @default(TETAP)
+  isActive          Boolean           @default(true)
+  
+  // ========== FOTO & DOKUMEN ==========
+  foto              String?           // Foto diri
+  fotoKTP           String?           // Scan KTP
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  peristiwa         PeristiwaKependudukan[]
+  suratPemohon      Surat[]
+  
+  @@index([nik])
+  @@index([namaLengkap])
+  @@index([kkId])
+  @@index([desaId])
+  @@index([pasanganId])
+  @@index([ayahId])
+  @@index([ibuId])
+  @@index([statusAnak])
+}
+
+// Pendatang Sementara
+model Pendatang {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa (untuk multi-tenant)
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  nik               String?
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pekerjaan         String?
+  alamatAsal        String
+  tujuanKedatangan  String
+  noTelp            String?
+  
+  // Alamat di Desa
+  alamat            String?
+  rtId              String?
+  rt                RT?               @relation(fields: [rtId], references: [id])
+  dusunId           String?
+  dusun             Dusun?            @relation(fields: [dusunId], references: [id])
+  
+  // Waktu
+  tanggalDatang     DateTime          @default(now())
+  tanggalPulang     DateTime?
+  lamaTinggal       String?           // dalam hari/bulan
+  
+  // Status
+  isActive          Boolean           @default(true)
+  keterangan        String?
+  
+  // Foto
+  foto              String?
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([namaLengkap])
+  @@index([isActive])
+  @@index([dusunId])
+  @@index([desaId])
+}
+
+// Peristiwa Kependudukan
+model PeristiwaKependudukan {
+  id                String            @id @default(cuid())
+  jenisPeristiwa    JenisPeristiwa
+  
+  // Relasi ke Desa (untuk multi-tenant)
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Penduduk terkait
+  pendudukId        String?
+  penduduk          Penduduk?         @relation(fields: [pendudukId], references: [id])
+  
+  // KK terkait
+  kkId              String?
+  kk                KK?               @relation(fields: [kkId], references: [id])
+  
+  // Detail peristiwa
+  tanggalPeristiwa  DateTime          @default(now())
+  tempat            String?
+  keterangan        String?
+  
+  // Untuk pindah masuk/keluar
+  alamatAsal        String?           // Untuk pindah masuk
+  alamatTujuan      String?           // Untuk pindah keluar
+  
+  // Untuk kematian
+  penyebabKematian  String?
+  
+  // Untuk kelahiran
+  namaBayi          String?
+  jenisKelaminBayi  JenisKelamin?
+  beratBayi         String?
+  panjangBayi       String?
+  
+  // Status
+  isProcessed       Boolean           @default(false)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([jenisPeristiwa])
+  @@index([tanggalPeristiwa])
+  @@index([pendudukId])
+  @@index([desaId])
+}
+
+// Monitoring Data Kependudukan - per desa
+model MonitoringData {
+  id                String            @id @default(cuid())
+  desaId            String            // Setiap monitoring data terikat ke desa
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  periode           DateTime          @default(now())  // Bulan/Tahun
+  bulan             Int               @default(1)
+  tahun             Int
+  
+  // Statistik
+  totalPenduduk     Int               @default(0)
+  totalLakiLaki     Int               @default(0)
+  totalPerempuan    Int               @default(0)
+  totalKK           Int               @default(0)
+  
+  // Perubahan
+  kelahiran         Int               @default(0)
+  kematian          Int               @default(0)
+  pindahMasuk       Int               @default(0)
+  pindahKeluar      Int               @default(0)
+  
+  // Pendatang
+  pendatangAktif    Int               @default(0)
+  
+  // Peristiwa
+  perkawinan        Int               @default(0)
+  perceraian        Int               @default(0)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@unique([desaId, bulan, tahun])
+  @@index([desaId])
+}
+
+// ==================== LEMBAGA DESA ====================
+
+// Jenis Jabatan Perangkat Desa
+enum JenisJabatan {
+  KEPALA_DESA
+  SEKRETARIS_DESA
+  KAUR_TATA_USAHA
+  KAUR_KEUANGAN
+  KAUR_PERENCANAAN
+  KASI_PEMERINTAHAN
+  KASI_KESRA
+  KASI_PELAYANAN
+  KEPALA_DUSUN
+  LAINNYA
+}
+
+// Perangkat Desa
+model PerangkatDesa {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  nip               String?           // NIP untuk PNS
+  nipd              String?           // NIPD untuk non-PNS
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  
+  // Jabatan
+  jabatan           JenisJabatan
+  jabatanLainnya    String?           // Diisi jika jabatan = LAINNYA
+  masaJabatanMulai  DateTime?
+  masaJabatanSelesai DateTime?
+  skPengangkatan    String?           // Nomor SK Pengangkatan
+  tanggalSk         DateTime?
+  
+  // Kontak
+  alamat            String?
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// BPD (Badan Permusyawaratan Desa)
+model BPD {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di BPD
+  jabatan           String            // Ketua, Wakil Ketua, Sekretaris, Anggota
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// LPM (Lembaga Pemberdayaan Masyarakat)
+model LPM {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di LPM
+  jabatan           String            // Ketua, Wakil Ketua, Sekretaris, Bendahara, Anggota
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// MUI (Majelis Ulama Indonesia) Desa
+model MUI {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di MUI
+  jabatan           String            // Ketua, Wakil Ketua, Sekretaris, Bendahara, Anggota
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// Karang Taruna (Organisasi Kepemudaan)
+model KarangTaruna {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di Karang Taruna
+  jabatan           String            // Ketua, Wakil Ketua, Sekretaris, Bendahara, Sie, Anggota
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// PKK (Pembinaan Kesejahteraan Keluarga)
+model PKK {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di PKK
+  jabatan           String            // Ketua, Wakil Ketua, Sekretaris, Bendahara, Pokja I-IX, Anggota
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// Ketua RW (Rukun Warga)
+model KetuaRW {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di RW
+  jabatan           String            // Ketua RW, Wakil Ketua RW, Sekretaris RW, Bendahara RW, Anggota
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// Ketua RT (Rukun Tetangga)
+model KetuaRT {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di RT
+  jabatan           String            // Ketua RT 001, Sekretaris RT 001, dll
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// Linmas (Perlindungan Masyarakat)
+model Linmas {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di Linmas
+  jabatan           String            // Ketua, Wakil Ketua, Sekretaris, Bendahara, Koordinator, Anggota
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// Bumdes (Badan Usaha Milik Desa)
+model Bumdes {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di Bumdes
+  jabatan           String
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
+
+// ==================== PELAYANAN SURAT DESA ====================
+
+enum SuratStatus {
+  DRAFT
+  MENUNGGU_PROSES
+  DALAM_PROSES
+  MENUNGGU_APPROVAL
+  DITOLAK_OPERATOR
+  DITOLAK_KADES
+  DISETUJUI
+  DICETAK
+  DIBATALKAN
+  DIARSIPKAN
+}
+
+enum SuratLogAksi {
+  AJUKAN
+  PROSES
+  APPROVE
+  REJECT
+  CETAK
+  BATAL
+  ARSIP
+  UPDATE
+}
+
+enum FormatBulan {
+  ROMAWI
+  ANGKA
+  TANPA
+}
+
+enum KategoriSurat {
+  KEPENDUDUKAN
+  PENGANTAR
+  KETERANGAN
+  PERNYATAAN
+  TANAH_PROPERTI
+  KEUANGAN
+  LEMBAGA
+}
+
+enum TingkatApproval {
+  LANGSUNG_PROSES
+  PERLU_APPROVAL
+}
+
+model SuratJenis {
+  id              String          @id @default(cuid())
+  kode            String          @unique
+  nama            String
+  kategori        KategoriSurat
+  tingkatApproval TingkatApproval  @default(LANGSUNG_PROSES)
+  deskripsi       String?
+  persyaratan     String?
+  fieldTemplate   String?
+  isActive        Boolean         @default(true)
+  urutan          Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  desaId          String
+  desa            Desa            @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  surat           Surat[]
+  suratTemplate   SuratTemplate?
+  nomorSurat      NomorSurat[]
+
+  @@index([desaId])
+  @@index([kategori])
+  @@index([kode])
+}
+
+model SuratTemplate {
+  id              String          @id @default(cuid())
+  nama            String
+  jenisSuratId    String          @unique
+  kontenHTML      String
+  kontenCSS       String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  jenisSurat      SuratJenis      @relation(fields: [jenisSuratId], references: [id], onDelete: Cascade)
+
+  @@index([jenisSuratId])
+}
+
+model SuratKonfigurasi {
+  id                String        @id @default(cuid())
+  desaId            String        @unique
+  formatNomorSurat  String        @default("{nomor}/{kodeDesa}/{bulan}/{tahun}")
+  digitPadding      Int           @default(3)
+  formatBulan       FormatBulan   @default(ROMAWI)
+  resetNomorPer     String        @default("PER_TAHUN")
+  formatNomorRegister String      @default("{nomor}/{kodeDesa}")
+  digitPaddingReg   Int           @default(4)
+  kodeDesaSurat     String
+  kepalaDesaNama    String?
+  kepalaDesaNIP     String?
+  sekretarisNama    String?
+  sekretarisNIP     String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  desa              Desa          @relation(fields: [desaId], references: [id], onDelete: Cascade)
+}
+
+model NomorSurat {
+  id              String    @id @default(cuid())
+  desaId          String
+  jenisSuratId    String
+  tahun           Int
+  bulan           Int       @default(0)
+  nomorTerakhir   Int       @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  desa            Desa      @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  jenisSurat      SuratJenis @relation(fields: [jenisSuratId], references: [id], onDelete: Cascade)
+
+  @@unique([desaId, jenisSuratId, tahun, bulan])
+  @@index([desaId])
+  @@index([jenisSuratId])
+}
+
+model NomorRegister {
+  id              String    @id @default(cuid())
+  desaId          String
+  tahun           Int
+  nomorTerakhir   Int       @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  desa            Desa      @relation(fields: [desaId], references: [id], onDelete: Cascade)
+
+  @@unique([desaId, tahun])
+  @@index([desaId])
+}
+
+model Surat {
+  id                String      @id @default(cuid())
+  desaId            String
+  desa              Desa        @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  jenisSuratId      String
+  jenisSurat        SuratJenis  @relation(fields: [jenisSuratId], references: [id])
+  pemohonId         String?
+  pemohon           Penduduk?   @relation(fields: [pemohonId], references: [id])
+  operatorId        String?
+  operator          User?       @relation("OperatorSurat", fields: [operatorId], references: [id])
+  approverId        String?
+  approver          User?       @relation("ApproverSurat", fields: [approverId], references: [id])
+  nomorSurat         String?
+  nomorIndex         Int?
+  nomorRegister      Int?
+  nomorRegisterFmt   String?
+  pemohonNama       String
+  pemohonNIK        String?
+  pemohonAlamat     String?
+  pemohonRT          String?
+  pemohonRW          String?
+  pemohonDusun       String?
+  pemohonTelepon     String?
+  isiSurat          String
+  status            SuratStatus @default(DRAFT)
+  tanggalAjukan     DateTime?
+  tanggalProses     DateTime?
+  tanggalSelesai    DateTime?
+  catatanOperator   String?
+  catatanApprover   String?
+  alasanDitolak     String?
+  filePDF           String?
+  fileQRCode        String?
+  dokumenPendukung  String?
+  dicetakPada       DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  log               SuratLog[]
+
+  @@index([desaId])
+  @@index([jenisSuratId])
+  @@index([pemohonId])
+  @@index([operatorId])
+  @@index([approverId])
+  @@index([status])
+  @@index([nomorSurat])
+  @@index([nomorRegister])
+  @@index([tanggalAjukan])
+  @@index([desaId, status])
+  @@index([desaId, createdAt])
+}
+
+model SuratLog {
+  id              String        @id @default(cuid())
+  suratId         String
+  surat           Surat         @relation(fields: [suratId], references: [id], onDelete: Cascade)
+  aksi            SuratLogAksi
+  userId          String?
+  userName        String
+  keterangan      String?
+  dataSebelum     String?
+  dataSesudah      String?
+  ipAddress       String?
+  createdAt       DateTime      @default(now())
+
+  @@index([suratId])
+  @@index([aksi])
+  @@index([createdAt])
+}
+
+// Koperasi (Koperasi Merah Putih)
+model Koperasi {
+  id                String            @id @default(cuid())
+  
+  // Relasi ke Desa
+  desaId            String
+  desa              Desa              @relation(fields: [desaId], references: [id], onDelete: Cascade)
+  
+  // Identitas
+  namaLengkap       String
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  jenisKelamin      JenisKelamin
+  pendidikanTerakhir String?
+  pekerjaan         String?
+  
+  // Jabatan di Koperasi
+  jabatan           String
+  periodeMulai      DateTime?
+  periodeSelesai    DateTime?
+  skPengangkatan    String?
+  tanggalSk         DateTime?
+  
+  // Alamat
+  alamat            String?
+  
+  // Kontak
+  noHp              String?
+  
+  // Foto
+  foto              String?
+  
+  // Urutan tampilan
+  urutan            Int               @default(0)
+  
+  // Status
+  isActive          Boolean           @default(true)
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  @@index([desaId])
+  @@index([namaLengkap])
+  @@index([jabatan])
+}
